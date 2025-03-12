@@ -1,0 +1,42 @@
+{
+    "tasks": [
+        {
+            "label": "Run premake",
+            "type": "shell",
+            "command": "./Scripts/Setup-Linux.sh",
+            "windows": {
+                "command": ".\\Scripts\\Setup-Windows.bat"
+            },
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "detail": "Run premake to generate project files"
+        },
+        {
+            "label": "Build project",
+            "type": "shell",
+            "command": "make",
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "detail": "Build project from sources"
+        },
+        {
+            "label": "Run Project",
+            "type": "shell",
+            "command": "./Binaries/linux-x86_64/Debug/Voxelion-App/Voxelion-App",
+            "group": "build",
+            "dependsOn": ["Build project"],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "detail": "Build project from sources"
+        }
+    ],
+    "version": "2.0.0"
+}

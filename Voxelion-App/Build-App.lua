@@ -1,4 +1,4 @@
-project "App"
+project "Voxelion-App"
    kind "ConsoleApp"
    language "C++"
    cppdialect "C++20"
@@ -12,12 +12,12 @@ project "App"
       "Source",
 
 	  -- Include Core
-	  "../Core/Source"
+	  "../Voxelion-Core/Source"
    }
 
    links
    {
-      "Core"
+      "Voxelion-Core"
    }
 
    targetdir ("../Binaries/" .. OutputDir .. "/%{prj.name}")
