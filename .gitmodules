@@ -1,0 +1,6 @@
+[submodule "Vendor/glfw"]
+	path = Vendor/glfw
+	url = https://github.com/Electro98/glfw.git
+[submodule "Vendor/glm"]
+	path = Vendor/glm
+	url = https://github.com/g-truc/glm.git

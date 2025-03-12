@@ -1,4 +1,5 @@
--- premake5.lua
+-- Build.lua
+
 workspace "Voxelion"
    architecture "x64"
    configurations { "Debug", "Release", "Dist" }
@@ -9,6 +10,8 @@ workspace "Voxelion"
       buildoptions { "/EHsc", "/Zc:preprocessor", "/Zc:__cplusplus" }
 
 OutputDir = "%{cfg.system}-%{cfg.architecture}/%{cfg.buildcfg}"
+
+include "VoxelionExternal.lua"
 
 group "Voxelion-Core"
 	include "Voxelion-Core/Build-Core.lua"

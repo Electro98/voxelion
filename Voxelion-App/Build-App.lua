@@ -12,12 +12,15 @@ project "Voxelion-App"
       "Source",
 
 	  -- Include Core
-	  "../Voxelion-Core/Source"
+	  "../Voxelion-Core/Source",
+      "../Vendor/glm"
    }
 
    links
    {
-      "Voxelion-Core"
+      "Voxelion-Core",
+      "GLFW",
+      "%{Library.Vulkan}",
    }
 
    targetdir ("../Binaries/" .. OutputDir .. "/%{prj.name}")
