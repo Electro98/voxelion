@@ -7,7 +7,7 @@ IncludeDir["VulkanSDK"] = "/usr/include"
 IncludeDir["glm"] = "./Vendor/glm"
 
 LibraryDir = {}
-LibraryDir["VulkanSDK"] = "/usr/Lib"
+LibraryDir["VulkanSDK"] = "/usr/share"
 
 Library = {}
 Library["Vulkan"] = "%{LibraryDir.VulkanSDK}/vulkan"
