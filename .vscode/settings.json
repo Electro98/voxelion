@@ -2,6 +2,10 @@
     "cmake.ignoreCMakeListsMissing": true,
     "cSpell.words": [
         "glfw",
+        "SWAPCHAIN",
         "VKAPI"
-    ]
+    ],
+    "files.associations": {
+        "limits": "cpp"
+    }
 }
