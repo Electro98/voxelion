@@ -106,6 +106,13 @@ private:
     VkRenderPass m_RenderPass;
     VkPipelineLayout m_PipelineLayout;
     VkPipeline m_GraphicsPipeline;
+    std::vector<VkFramebuffer> m_SwapChainFramebuffers;
+    VkCommandPool m_CommandPool;
+    VkCommandBuffer m_CommandBuffer;
+
+    VkSemaphore m_ImageAvailableSemaphore;
+    VkSemaphore m_RenderFinishedSemaphore;
+    VkFence m_InFlightFence;
 
     void initWindow() {
         glfwInit();
@@ -127,15 +134,73 @@ private:
         createImageViews();
         createRenderPass();
         createGraphicsPipeline();
+        createFramebuffers();
+        createCommandPool();
+        createCommandBuffer();
+        createSyncObjects();
     }
 
     void mainLoop() {
         while (!glfwWindowShouldClose(m_Window)) {
             glfwPollEvents();
+            drawFrame();
         }
+
+        vkDeviceWaitIdle(m_Device);
+    }
+
+    void drawFrame() {
+        vkWaitForFences(m_Device, 1, &m_InFlightFence, VK_TRUE, UINT64_MAX);
+        vkResetFences(m_Device, 1, &m_InFlightFence);
+
+        uint32_t imageIndex;
+        vkAcquireNextImageKHR(m_Device, m_SwapChain, UINT64_MAX, m_ImageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
+
+        vkResetCommandBuffer(m_CommandBuffer, 0);
+        recordCommandBuffer(m_CommandBuffer, imageIndex);
+
+        VkSemaphore waitSemaphores[] = {m_ImageAvailableSemaphore};
+        VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+        VkSemaphore signalSemaphores[] = {m_RenderFinishedSemaphore};
+        VkSubmitInfo submitInfo {
+            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            .waitSemaphoreCount = 1,
+            .pWaitSemaphores = waitSemaphores,
+            .pWaitDstStageMask = waitStages,
+            .commandBufferCount = 1,
+            .pCommandBuffers = &m_CommandBuffer,
+            .signalSemaphoreCount = 1,
+            .pSignalSemaphores = signalSemaphores,
+        };
+
+        if (vkQueueSubmit(m_GraphicsQueue, 1, &submitInfo, m_InFlightFence) != VK_SUCCESS) {
+            throw std::runtime_error("failed to submit draw command buffer!");
+        }
+
+        VkSwapchainKHR swapChains[] = {m_SwapChain};
+        VkPresentInfoKHR presentInfo {
+            .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+            .waitSemaphoreCount = 1,
+            .pWaitSemaphores = signalSemaphores,
+            .swapchainCount = 1,
+            .pSwapchains = swapChains,
+            .pImageIndices = &imageIndex,
+            .pResults = nullptr,
+        };
+
+        vkQueuePresentKHR(m_PresentQueue, &presentInfo);
     }
 
     void cleanup() {
+        vkDestroySemaphore(m_Device, m_ImageAvailableSemaphore, nullptr);
+        vkDestroySemaphore(m_Device, m_RenderFinishedSemaphore, nullptr);
+        vkDestroyFence(m_Device, m_InFlightFence, nullptr);
+        vkDestroyCommandPool(m_Device, m_CommandPool, nullptr);
+
+        for (auto framebuffer : m_SwapChainFramebuffers) {
+            vkDestroyFramebuffer(m_Device, framebuffer, nullptr);
+        }
+
         vkDestroyPipeline(m_Device, m_GraphicsPipeline, nullptr);
         vkDestroyPipelineLayout(m_Device, m_PipelineLayout, nullptr);
         vkDestroyRenderPass(m_Device, m_RenderPass, nullptr);
@@ -405,12 +470,23 @@ private:
             .pColorAttachments = &colorAttachmentRef,
         };
 
+        VkSubpassDependency dependency {
+            .srcSubpass = VK_SUBPASS_EXTERNAL,
+            .dstSubpass = 0,
+            .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            .srcAccessMask = 0,
+            .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        };
+
         VkRenderPassCreateInfo renderPassInfo {
             .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
             .attachmentCount = 1,
             .pAttachments = &colorAttachment,
             .subpassCount = 1,
             .pSubpasses = &subpass,
+            .dependencyCount = 1,
+            .pDependencies = &dependency,
         };
 
         if (vkCreateRenderPass(m_Device, &renderPassInfo, nullptr, &m_RenderPass) != VK_SUCCESS) {
@@ -453,49 +529,21 @@ private:
             .primitiveRestartEnable = VK_FALSE,
         };
 
-        // std::vector<VkDynamicState> dynamicStates {
-        //     VK_DYNAMIC_STATE_VIEWPORT,
-        //     VK_DYNAMIC_STATE_SCISSOR,
-        // };
-
-        // VkPipelineDynamicStateCreateInfo dynamicState {
-        //     .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-        //     .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
-        //     .pDynamicStates = dynamicStates.data(),
-        // };
-
-        // VkPipelineViewportStateCreateInfo viewportState {
-        //     .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-        //     .viewportCount = 1,
-        //     .scissorCount = 1,
-        // };
-
-        VkViewport viewport {
-            .x = 0.0f,
-            .y = 0.0f,
-            .width = (float) m_SwapChainExtent.width,
-            .height = (float) m_SwapChainExtent.height,
-            .minDepth = 0.0f,
-            .maxDepth = 1.0f,
+        std::vector<VkDynamicState> dynamicStates {
+            VK_DYNAMIC_STATE_VIEWPORT,
+            VK_DYNAMIC_STATE_SCISSOR,
         };
 
-        VkRect2D scissor {
-            .offset = {0, 0},
-            .extent = m_SwapChainExtent,
+        VkPipelineDynamicStateCreateInfo dynamicState {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+            .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
+            .pDynamicStates = dynamicStates.data(),
         };
 
         VkPipelineViewportStateCreateInfo viewportState {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
             .viewportCount = 1,
-            .pViewports = &viewport,
             .scissorCount = 1,
-            .pScissors = &scissor,
-        };
-
-        VkPipelineDynamicStateCreateInfo dynamicState {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-            .dynamicStateCount = 0,
-            .pDynamicStates = nullptr,
         };
 
         VkPipelineRasterizationStateCreateInfo rasterizer {
@@ -523,13 +571,13 @@ private:
         };
 
         VkPipelineColorBlendAttachmentState colorBlendAttachment {
-            .blendEnable = VK_TRUE,
-            .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
-            .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
-            .colorBlendOp = VK_BLEND_OP_ADD,
-            .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
-            .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
-            .alphaBlendOp = VK_BLEND_OP_ADD,
+            .blendEnable = VK_FALSE,
+            // .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+            // .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+            // .colorBlendOp = VK_BLEND_OP_ADD,
+            // .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+            // .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+            // .alphaBlendOp = VK_BLEND_OP_ADD,
             .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
         };
 
@@ -580,6 +628,74 @@ private:
 
         vkDestroyShaderModule(m_Device, vertShaderModule, nullptr);
         vkDestroyShaderModule(m_Device, fragShaderModule, nullptr);
+    }
+
+    void createFramebuffers() {
+        m_SwapChainFramebuffers.resize(m_SwapChainImageViews.size());
+
+        for (size_t i = 0; i < m_SwapChainImageViews.size(); i++) {
+            VkImageView attachment[] = {
+                m_SwapChainImageViews[i],
+            };
+
+            VkFramebufferCreateInfo framebufferInfo {
+                .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+                .renderPass = m_RenderPass,
+                .attachmentCount = 1,
+                .pAttachments = attachment,
+                .width = m_SwapChainExtent.width,
+                .height = m_SwapChainExtent.height,
+                .layers = 1,
+            };
+
+            if (vkCreateFramebuffer(m_Device, &framebufferInfo, nullptr, &m_SwapChainFramebuffers[i]) != VK_SUCCESS) {
+                throw std::runtime_error("failed to create framebuffer!");
+            }
+        }
+        
+    }
+
+    void createCommandPool() {
+        QueueFamilyIndices queueFamilyIndices = findQueueFamilies(m_PhysicalDevice);
+
+        VkCommandPoolCreateInfo poolInfo {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+            .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+            .queueFamilyIndex = queueFamilyIndices.graphicsFamily.value(),
+        };
+
+        if (vkCreateCommandPool(m_Device, &poolInfo, nullptr, &m_CommandPool) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create command pool!");
+        }
+    }
+
+    void createCommandBuffer() {
+        VkCommandBufferAllocateInfo allocInfo {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .commandPool = m_CommandPool,
+            .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+            .commandBufferCount = 1,
+        };
+
+        if (vkAllocateCommandBuffers(m_Device, &allocInfo, &m_CommandBuffer) != VK_SUCCESS) {
+            throw std::runtime_error("failed to allocate command buffers!");
+        }
+    }
+
+    void createSyncObjects() {
+        VkSemaphoreCreateInfo semaphoreInfo {
+            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+        };
+        VkFenceCreateInfo fenceInfo {
+            .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+            .flags = VK_FENCE_CREATE_SIGNALED_BIT,
+        };
+
+        if (vkCreateSemaphore(m_Device, &semaphoreInfo, nullptr, &m_ImageAvailableSemaphore) != VK_SUCCESS ||
+            vkCreateSemaphore(m_Device, &semaphoreInfo, nullptr, &m_RenderFinishedSemaphore) != VK_SUCCESS ||
+            vkCreateFence(m_Device, &fenceInfo, nullptr, &m_InFlightFence) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create semaphores!");
+        }
     }
 
     VkShaderModule createShaderModule(const std::vector<char> &code) {
@@ -717,6 +833,59 @@ private:
         }
 
         return extensions;
+    }
+
+    void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
+        VkCommandBufferBeginInfo beginInfo {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            .flags = 0,
+            .pInheritanceInfo = nullptr,
+        };
+
+        if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
+            throw std::runtime_error("failed to begin recording command buffer!");
+        }
+
+        VkClearValue clearColor {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+
+        VkRenderPassBeginInfo renderPassInfo {
+            .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+            .renderPass = m_RenderPass,
+            .framebuffer = m_SwapChainFramebuffers[imageIndex],
+            .renderArea = {
+                .offset = {0, 0},
+                .extent = m_SwapChainExtent,
+            },
+            .clearValueCount = 1,
+            .pClearValues = &clearColor,
+        };
+
+        vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_GraphicsPipeline);
+
+        VkViewport viewport {
+            .x = 0.0f,
+            .y = 0.0f,
+            .width = (float) m_SwapChainExtent.width,
+            .height = (float) m_SwapChainExtent.height,
+            .minDepth = 0.0f,
+            .maxDepth = 1.0f,
+        };
+        vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+        VkRect2D scissor {
+            .offset = {0, 0},
+            .extent = m_SwapChainExtent,
+        };
+        vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+        vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+
+        vkCmdEndRenderPass(commandBuffer);
+
+        if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
+            throw std::runtime_error("failed to record command buffer!");
+        }
     }
 
     static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
