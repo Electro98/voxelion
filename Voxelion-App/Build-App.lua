@@ -7,6 +7,11 @@ project "Voxelion-App"
 
    files { "Source/**.h", "Source/**.cpp" }
 
+   prebuildcommands {
+      "glslc %[%{!prj.location}/Shaders/shader.vert] -o %[%{!prj.location}/ShadersCompiled/vert.spv]",
+      "glslc %[%{!prj.location}/Shaders/shader.frag] -o %[%{!prj.location}/ShadersCompiled/frag.spv]",
+   }
+
    includedirs
    {
       "Source",
