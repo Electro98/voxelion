@@ -18,7 +18,8 @@ project "Voxelion-App"
 
 	  -- Include Core
 	  "../Voxelion-Core/Source",
-      "../Vendor/glm"
+      "../Vendor/glm",
+      "../Vendor/stb"
    }
 
    links

@@ -1,6 +1,7 @@
 # Directories
 .vs/
 Binaries/
+**/ShadersCompiled/**
 
 # Files
 *.vcxproj

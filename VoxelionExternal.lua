@@ -5,6 +5,7 @@ VULKAN_SDK = os.getenv("VULKAN_SDK")
 IncludeDir = {}
 IncludeDir["VulkanSDK"] = "/usr/include"
 IncludeDir["glm"] = "./Vendor/glm"
+IncludeDir["stb"] = "./Vendor/stb"
 
 LibraryDir = {}
 LibraryDir["VulkanSDK"] = "/usr/share"

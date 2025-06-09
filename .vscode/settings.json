@@ -4,6 +4,7 @@
         "glfw",
         "Multisample",
         "multisampling",
+        "stbi",
         "SWAPCHAIN",
         "VKAPI",
         "Voxelion"
@@ -13,6 +14,13 @@
         "iosfwd": "cpp",
         "stdexcept": "cpp",
         "memory": "cpp",
-        "chrono": "cpp"
-    }
+        "chrono": "cpp",
+        "format": "cpp"
+    },
+    "clangd.fallbackFlags": [
+        "-I${workspaceFolder}/Voxelion-Core/Source/",
+        "-I${workspaceFolder}/Vendor/glm",
+        "-I${workspaceFolder}/Vendor/stb",
+        "-Wall"
+    ]
 }
