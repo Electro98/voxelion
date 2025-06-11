@@ -1,5 +1,6 @@
 #include <Core/Core.h>
 #include <Core/Logger.h>
+#include <cstddef>
 #include <cstdint>
 #include <vulkan/vulkan_core.h>
 
@@ -285,6 +286,7 @@ private:
             throw std::runtime_error("failed to acquire swap chain image!");
         }
 
+        // std::cout << "Image index:" << imageIndex << "  Frame:" << m_CurrentFrame << std::endl;
         vkResetFences(m_Device, 1, &m_InFlightFences[m_CurrentFrame]);
 
         vkResetCommandBuffer(m_CommandBuffers[m_CurrentFrame], 0);
@@ -294,7 +296,7 @@ private:
 
         VkSemaphore waitSemaphores[] = {m_ImageAvailableSemaphores[m_CurrentFrame]};
         VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-        VkSemaphore signalSemaphores[] = {m_RenderFinishedSemaphores[m_CurrentFrame]};
+        VkSemaphore signalSemaphores[] = {m_RenderFinishedSemaphores[imageIndex]};
         VkSubmitInfo submitInfo {
             .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
             .waitSemaphoreCount = 1,
@@ -358,8 +360,10 @@ private:
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
             vkDestroySemaphore(m_Device, m_ImageAvailableSemaphores[i], nullptr);
-            vkDestroySemaphore(m_Device, m_RenderFinishedSemaphores[i], nullptr);
             vkDestroyFence(m_Device, m_InFlightFences[i], nullptr);
+        }
+        for (size_t i = 0; i < m_RenderFinishedSemaphores.size(); i++) {
+            vkDestroySemaphore(m_Device, m_RenderFinishedSemaphores[i], nullptr);
         }
         vkDestroyCommandPool(m_Device, m_CommandPool, nullptr);
         vkDestroyCommandPool(m_Device, m_TransferCmdPool, nullptr);
@@ -1161,14 +1165,14 @@ private:
             .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
             .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
             .mipLodBias = .0f,
-            .minLod = .0f,
-            .maxLod = .0f,
             .anisotropyEnable = VK_TRUE,
             .maxAnisotropy = properties.limits.maxSamplerAnisotropy,
-            .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
-            .unnormalizedCoordinates = VK_FALSE,
             .compareEnable = VK_FALSE,
             .compareOp = VK_COMPARE_OP_ALWAYS,
+            .minLod = .0f,
+            .maxLod = .0f,
+            .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+            .unnormalizedCoordinates = VK_FALSE,
         };
 
         if (vkCreateSampler(m_Device, &samplerInfo, nullptr, &m_TextureSampler) != VK_SUCCESS) {
@@ -1323,8 +1327,13 @@ private:
     }
 
     void createSyncObjects() {
+        // TODO: This function make assumption that
+        //  after recreating swapchain we get the same number of images!
+        if (m_SwapChainImages.size() == 0) {
+            throw std::runtime_error("Swapchain should be initialized before sync objects!");
+        }
         m_ImageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
-        m_RenderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+        m_RenderFinishedSemaphores.resize(m_SwapChainImages.size());
         m_InFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
         VkSemaphoreCreateInfo semaphoreInfo {
             .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
@@ -1336,8 +1345,12 @@ private:
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
             if (vkCreateSemaphore(m_Device, &semaphoreInfo, nullptr, &m_ImageAvailableSemaphores[i]) != VK_SUCCESS ||
-                vkCreateSemaphore(m_Device, &semaphoreInfo, nullptr, &m_RenderFinishedSemaphores[i]) != VK_SUCCESS ||
                 vkCreateFence(m_Device, &fenceInfo, nullptr, &m_InFlightFences[i]) != VK_SUCCESS) {
+                throw std::runtime_error("failed to create synchronization objects!");
+            }
+        }
+        for (size_t i = 0; i < m_SwapChainImages.size(); i++) {
+            if (vkCreateSemaphore(m_Device, &semaphoreInfo, nullptr, &m_RenderFinishedSemaphores[i]) != VK_SUCCESS) {
                 throw std::runtime_error("failed to create synchronization objects!");
             }
         }
